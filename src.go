@@ -4,31 +4,29 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/djherbis/times"
 )
 
-func srcdst(srcdir string, dstdir string, prog *Progress) error {
+func srcdst(srcdir string, dstdir string, prog *Progress, errs chan error) {
 	src, err := os.ReadDir(srcdir)
 	if err != nil {
-		return err
+		errs <- err
+		return
 	}
 
 	prog.AddTotal(int64(len(src)))
-	res := make([]chan error, len(src))
+	wg := &sync.WaitGroup{}
 
 	// Go through files in directory
-	for i, file := range src {
-		// Get info
-		errout := make(chan error)
-		res[i] = errout
-
+	for _, file := range src {
 		srcname := filepath.Join(srcdir, file.Name())
 		dstname := filepath.Join(dstdir, file.Name())
 
 		info, err := file.Info()
 		if err != nil {
-			return err
+			errs <- err
 		}
 
 		// Directory or File?
@@ -36,26 +34,25 @@ func srcdst(srcdir string, dstdir string, prog *Progress) error {
 			// Make Destination Folder
 			err = os.MkdirAll(dstname, info.Mode())
 			if err != nil {
-				return err
+				errs <- err
 			}
 
 			// Recursively do it on that folder
-			go func(out chan error, srcdir string, dstdir string, prog *Progress) {
-				err := srcdst(srcdir, dstdir, prog)
-				out <- err
-			}(res[i], srcname, dstname, prog)
+			wg.Add(1)
+			go func(srcdir string, dstdir string, prog *Progress) {
+				srcdst(srcdir, dstdir, prog, errs)
+				prog.Add(1)
+				wg.Done()
+			}(srcname, dstname, prog)
 		} else {
 			// Are Equal? If so, don't copy
 			stat, err := os.Stat(dstname)
 			exist := os.IsExist(err)
 			if exist {
 				if err != nil {
-					return err
-				}
-				if stat.Mode() == info.Mode() && stat.ModTime().Equal(info.ModTime()) && stat.Size() == info.Size() {
-					go func() {
-						errout <- nil
-					}()
+					errs <- err
+					continue
+				} else if stat.Mode() == info.Mode() && stat.ModTime().Equal(info.ModTime()) && stat.Size() == info.Size() {
 					continue
 				}
 			}
@@ -63,24 +60,25 @@ func srcdst(srcdir string, dstdir string, prog *Progress) error {
 			// If Not, Copy
 			sf, err := os.Open(srcname)
 			if err != nil {
-				return err
+				errs <- err
 			}
 			df, err := os.OpenFile(dstname, os.O_CREATE|os.O_WRONLY, info.Mode())
 			if err != nil {
-				return err
+				errs <- err
 			}
 
 			// Copy files async
-			go func(sf, df *os.File, errout chan error) {
+			wg.Add(1)
+			go func(sf, df *os.File) {
 				err = df.Truncate(0)
 				if err != nil {
-					errout <- err
+					errs <- err
 					return
 				}
 
 				_, err = io.Copy(df, sf)
 				if err != nil {
-					errout <- err
+					errs <- err
 					return
 				}
 				df.Close()
@@ -89,28 +87,19 @@ func srcdst(srcdir string, dstdir string, prog *Progress) error {
 				// Change modified time for file to that of original
 				inf, err := times.Stat(srcname)
 				if err != nil {
-					errout <- err
+					errs <- err
 					return
 				}
 				err = os.Chtimes(dstname, inf.AccessTime(), inf.ModTime())
 				if err != nil {
-					errout <- err
+					errs <- err
 					return
 				}
-
-				errout <- nil
-			}(sf, df, errout)
+				prog.Add(1)
+				wg.Done()
+			}(sf, df)
 		}
 	}
 
-	// Wait for it to be complete
-	for _, out := range res {
-		err := <-out
-		prog.Add(1)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	wg.Wait()
 }

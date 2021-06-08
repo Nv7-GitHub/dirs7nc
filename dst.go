@@ -5,10 +5,11 @@ import (
 	"path/filepath"
 )
 
-func dstsrc(srcdir string, dstdir string, prog *Progress) error {
+func dstsrc(srcdir string, dstdir string, prog *Progress, errs chan error) {
 	src, err := os.ReadDir(srcdir)
 	if err != nil {
-		return err
+		errs <- err
+		return
 	}
 
 	prog.AddTotal(int64(len(src)))
@@ -23,17 +24,15 @@ func dstsrc(srcdir string, dstdir string, prog *Progress) error {
 			if file.IsDir() {
 				err = os.RemoveAll(f)
 				if err != nil {
-					return err
+					errs <- err
 				}
 			} else {
 				err = os.Remove(f)
 				if err != nil {
-					return err
+					errs <- err
 				}
 			}
 		}
 		prog.Add(1)
 	}
-
-	return nil
 }

@@ -1,21 +1,20 @@
 package dirsync
 
 // Sync syncs two directories, and returns a progress indicator
-func Sync(srcdir string, dstdir string, prog **Progress) error {
+func Sync(srcdir string, dstdir string) (*Progress, chan error) {
 	p := NewProgress(1)
-	*prog = p
+	errs := make(chan error)
 
-	// Sync src -> dst
-	err := srcdst(srcdir, dstdir, p)
-	if err != nil {
-		return err
-	}
+	go func() {
+		// Sync src -> dst
+		srcdst(srcdir, dstdir, p, errs)
 
-	// Delete hanging files in dst
-	err = dstsrc(dstdir, srcdir, p)
-	if err != nil {
-		return err
-	}
+		// Delete hanging files in dst
+		dstsrc(dstdir, srcdir, p, errs)
 
-	return nil
+		// Finish
+		errs <- nil
+	}()
+
+	return p, errs
 }

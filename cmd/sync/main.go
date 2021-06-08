@@ -1,14 +1,18 @@
 package main
 
 import (
+	"fmt"
+
 	dirsync "github.com/Nv7-Github/dirs7nc"
 )
 
 func main() {
-	var prog *dirsync.Progress
+	_, errs := dirsync.Sync("/Users/nishant", "/Volumes/Files Sync/nishant")
+	//_, errs := dirsync.Sync("testing/a", "testing/b")
 
-	err := dirsync.Sync("testing/a", "testing/b", &prog)
-	if err != nil {
-		panic(err)
+	err := <-errs
+	for err != nil {
+		fmt.Println(err)
+		err = <-errs
 	}
 }
