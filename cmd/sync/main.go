@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	_, errs := dirsync.Sync("/Users/nishant", "/Volumes/Files Sync/nishant")
+	_, errs := dirsync.Sync("/Users/nishant", "/Volumes/Files Sync/nishant", 500)
 	//_, errs := dirsync.Sync("testing/a", "testing/b")
 
 	err := <-errs

@@ -9,7 +9,7 @@ import (
 	"github.com/djherbis/times"
 )
 
-func srcdst(srcdir string, dstdir string, prog *Progress, errs chan error) {
+func srcdst(srcdir string, dstdir string, prog *Progress, errs chan error, haslimit bool, maxprocs chan empty) {
 	src, err := os.ReadDir(srcdir)
 	if err != nil {
 		errs <- err
@@ -39,10 +39,12 @@ func srcdst(srcdir string, dstdir string, prog *Progress, errs chan error) {
 
 			// Recursively do it on that folder
 			wg.Add(1)
+			maxprocs <- empty{}
 			go func(srcdir string, dstdir string, prog *Progress) {
-				srcdst(srcdir, dstdir, prog, errs)
+				srcdst(srcdir, dstdir, prog, errs, haslimit, maxprocs)
 				prog.Add(1)
 				wg.Done()
+				<-maxprocs
 			}(srcname, dstname, prog)
 		} else {
 			// Are Equal? If so, don't copy
@@ -69,7 +71,10 @@ func srcdst(srcdir string, dstdir string, prog *Progress, errs chan error) {
 
 			// Copy files async
 			wg.Add(1)
+			maxprocs <- empty{}
 			go func(sf, df *os.File) {
+				defer func() { <-maxprocs }()
+
 				err = df.Truncate(0)
 				if err != nil {
 					errs <- err
