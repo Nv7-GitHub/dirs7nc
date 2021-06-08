@@ -11,5 +11,11 @@ func Sync(srcdir string, dstdir string, prog **Progress) error {
 		return err
 	}
 
+	// Delete hanging files in dst
+	err = dstsrc(dstdir, srcdir, p)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

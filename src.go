@@ -17,7 +17,9 @@ func srcdst(srcdir string, dstdir string, prog *Progress) error {
 	prog.AddTotal(int64(len(src)))
 	res := make([]chan error, len(src))
 
+	// Go through files in directory
 	for i, file := range src {
+		// Get info
 		errout := make(chan error)
 		res[i] = errout
 
@@ -29,6 +31,7 @@ func srcdst(srcdir string, dstdir string, prog *Progress) error {
 			return err
 		}
 
+		// Directory or File?
 		if file.IsDir() {
 			// Make Destination Folder
 			err = os.MkdirAll(dstname, info.Mode())
@@ -42,16 +45,19 @@ func srcdst(srcdir string, dstdir string, prog *Progress) error {
 				out <- err
 			}(res[i], srcname, dstname, prog)
 		} else {
-			// Are Equal?
+			// Are Equal? If so, don't copy
 			stat, err := os.Stat(dstname)
-			if err != nil {
-				return err
-			}
-			if stat.Mode() == info.Mode() && stat.ModTime().Equal(info.ModTime()) && stat.Size() == info.Size() {
-				go func() {
-					errout <- nil
-				}()
-				continue
+			exist := os.IsExist(err)
+			if exist {
+				if err != nil {
+					return err
+				}
+				if stat.Mode() == info.Mode() && stat.ModTime().Equal(info.ModTime()) && stat.Size() == info.Size() {
+					go func() {
+						errout <- nil
+					}()
+					continue
+				}
 			}
 
 			// If Not, Copy
@@ -100,6 +106,7 @@ func srcdst(srcdir string, dstdir string, prog *Progress) error {
 	// Wait for it to be complete
 	for _, out := range res {
 		err := <-out
+		prog.Add(1)
 		if err != nil {
 			return err
 		}
