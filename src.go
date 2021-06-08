@@ -39,12 +39,10 @@ func srcdst(srcdir string, dstdir string, prog *Progress, errs chan error, hasli
 
 			// Recursively do it on that folder
 			wg.Add(1)
-			maxprocs <- empty{}
 			go func(srcdir string, dstdir string, prog *Progress) {
 				srcdst(srcdir, dstdir, prog, errs, haslimit, maxprocs)
 				prog.Add(1)
 				wg.Done()
-				<-maxprocs
 			}(srcname, dstname, prog)
 		} else {
 			// Are Equal? If so, don't copy
@@ -59,35 +57,41 @@ func srcdst(srcdir string, dstdir string, prog *Progress, errs chan error, hasli
 				}
 			}
 
-			// If Not, Copy
-			sf, err := os.Open(srcname)
-			if err != nil {
-				errs <- err
-			}
-			df, err := os.OpenFile(dstname, os.O_CREATE|os.O_WRONLY, info.Mode())
-			if err != nil {
-				errs <- err
-			}
-
 			// Copy files async
 			wg.Add(1)
-			maxprocs <- empty{}
-			go func(sf, df *os.File) {
-				defer func() { <-maxprocs }()
+			if haslimit {
+				maxprocs <- empty{}
+			}
+			go func() {
+				defer func() {
+					<-maxprocs
+				}()
+
+				// If Not, Copy
+				sf, err := os.Open(srcname)
+				if err != nil {
+					errs <- err
+				}
+				defer sf.Close()
+				df, err := os.OpenFile(dstname, os.O_CREATE|os.O_WRONLY, info.Mode())
+				if err != nil {
+					errs <- err
+				}
+				defer df.Close()
 
 				err = df.Truncate(0)
 				if err != nil {
 					errs <- err
-					return
 				}
 
 				_, err = io.Copy(df, sf)
 				if err != nil {
 					errs <- err
+				}
+
+				if err != nil {
 					return
 				}
-				df.Close()
-				sf.Close()
 
 				// Change modified time for file to that of original
 				inf, err := times.Stat(srcname)
@@ -102,7 +106,7 @@ func srcdst(srcdir string, dstdir string, prog *Progress, errs chan error, hasli
 				}
 				prog.Add(1)
 				wg.Done()
-			}(sf, df)
+			}()
 		}
 	}
 
